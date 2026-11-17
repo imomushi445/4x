@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HEX ARCHITECT // YIELD OVERFLOW</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=JetBrains+Mono:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
+
+    :root {
+      --bg-navy: #0B1120;
+      --bg-panel: #111827;
+      --gold: #F59E0B;
+      --cyan: #06B6D4;
+      --emerald: #10B981;
+      --crimson: #F43F5E;
+      --purple: #A855F7;
+    }
+
+    body {
+      background-color: var(--bg-navy);
+      color: #F1F5F9;
+      font-family: 'Noto Sans JP', sans-serif;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .font-title {
+      font-family: 'Cinzel', 'Noto Sans JP', serif;
+    }
+
+    /* 建築製図・ボードゲーム風グリッド背景 */
+    .blueprint-bg {
+      background-color: #0B1120;
+      background-image:
+        radial-gradient(circle at 50% 45%, rgba(245, 158, 11, 0.06) 0%, transparent 60%),
+        linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
+    }
+
+    /* ヘックスホバー＆選択エフェクト */
+    .hex-group {
+      cursor: pointer;
+      transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .hex-group:hover .hex-base {
+      filter: brightness(1.18);
+    }
+
+    @keyframes hexPop {
+      0% { transform: scale(0.82); }
+      55% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    .hex-placed-anim {
+      animation: hexPop 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes beamPulse {
+      0%, 100% { stroke-opacity: 0.95; stroke-width: 3.5; }
+      50% { stroke-opacity: 0.45; stroke-width: 2; }
+    }
+    .synergy-beam {
+      animation: beamPulse 1.1s infinite ease-in-out;
+      pointer-events: none;
+    }
+
+    /* フローティングスコア演出 */
+    @keyframes floatScore {
+      0% { opacity: 0; transform: translate(-50%, 6px) scale(0.75); }
+      20% { opacity: 1; transform: translate(-50%, -8px) scale(1.15); }
+      100% { opacity: 0; transform: translate(-50%, -44px) scale(0.95); }
+    }
+    .floating-yield {
+      position: fixed;
+      pointer-events: none;
+      font-family: 'JetBrains Mono', 'Noto Sans JP', sans-serif;
+      font-weight: 800;
+      z-index: 60;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
+      animation: floatScore 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0B1120; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #F59E0B; }
+  </style>
+</head>
+<body class="blueprint-bg min-h-screen flex flex-col justify-between p-2 sm:p-3 lg:p-4">
+
+  <!-- トップヘッダーバー -->
+  <header class="max-w-[1440px] w-full mx-auto bg-[#111827]/95 border border-amber-500/30 rounded-xl px-3 sm:px-5 py-2.5 shadow-xl flex flex-wrap items-center justify-between gap-3">
+    <!-- タイトル＆時代表示 -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-400/60 flex items-center justify-center text-amber-400 font-bold text-lg shadow-inner">
+          ⬡
+        </div>
+        <div>
+          <h1 class="font-title text-sm sm:text-base font-extrabold tracking-wider text-amber-300 leading-tight">
+            HEX ARCHITECT <span class="text-slate-400 font-normal text-xs">// YIELD OVERFLOW</span>
+          </h1>
+          <div class="text-[11px] text-slate-400">隣接ボーナスパズル × 制度ルール破壊ローグライク</div>
+        </div>
+      </div>
+
+      <div class="h-7 w-[1px] bg-slate-700 hidden sm:block"></div>
+
+      <!-- 時代バッジ -->
+      <div id="era-badge" class="px-3 py-1 rounded-lg bg-slate-800 border border-amber-500/40 text-xs sm:text-sm font-bold text-amber-300">
+        ERA 1 / 5 // 古典時代
+      </div>
+    </div>
+
+    <!-- 中央：目標出力メーター -->
+    <div class="flex-1 max-w-md min-w-[220px] bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-1.5">
+      <div class="flex justify-between items-baseline text-xs mb-1">
+        <span class="text-slate-400 font-bold">都市総出力 (TOTAL YIELD)</span>
+        <span class="font-mono-num font-extrabold text-sm">
+          <span id="current-yield-text" class="text-amber-400">0</span>
+          <span class="text-slate-500"> / </span>
+          <span id="target-yield-text" class="text-emerald-400">24</span>
+        </span>
+      </div>
+      <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-[1px]">
+        <div id="yield-progress-bar" class="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- 右側コントロールボタン -->
+    <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+      <button id="btn-sandbox" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-purple-500/40 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 transition" title="全区域・全政策カードを自由に試せるモード切替">
+        🧪 サンドボックス: OFF
+      </button>
+      <button id="btn-undo" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-slate-600 bg-slate-800/80 text-slate-200 hover:border-amber-400 hover:text-amber-300 transition">
+        ↩ 1手戻す
+      </button>
+      <button id="btn-clear-pins" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/50 transition">
+        📍 ピン全消去
+      </button>
+      <button id="btn-reroll" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-rose-500/40 bg-rose-950/30 text-rose-300 hover:bg-rose-900/50 transition">
+        🎲 地形再生成
+      </button>
+      <button id="btn-sound" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border border-slate-600 bg-slate-800 text-slate-300 hover:text-white transition">
+        🔊
+      </button>
+    </div>
+  </header>
+
+  <!-- メイン3カラムレイアウト -->
+  <main class="max-w-[1440px] w-full mx-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 my-2.5 items-stretch">
+
+    <!-- 左パネル：区域ブループリント＆計画ピンモード (3カラム) -->
+    <aside class="lg:col-span-3 bg-[#111827]/95 border border-slate-800 rounded-xl p-3 flex flex-col justify-between gap-3 shadow-lg">
+      <div>
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+          <h2 class="text-xs font-extrabold tracking-wider text-amber-400 flex items-center gap-1.5">
+            <span>📐</span> 区域ブループリント
+          </h2>
+          <span id="placements-left-badge" class="text-[11px] font-mono-num px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+            建設枠: 6 / 6
+          </span>
+        </div>
+
+        <!-- Civ6風 マップピン（計画モード）トグル -->
+        <button id="btn-pin-mode" class="w-full mb-3 px-3 py-2 rounded-lg border border-cyan-500/40 bg-cyan-950/25 hover:bg-cyan-900/40 text-left flex items-center justify-between transition group">
+          <div>
+            <div class="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+              <span>📍</span> 都市計画ピンモード
+            </div>
+            <div class="text-[10px] text-slate-400">建設前に仮配置して出力をシミュレーション</div>
+          </div>
+          <span id="pin-mode-status" class="text-[11px] font-mono-num font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+            OFF
+          </span>
+        </button>
+
+        <!-- 区域リスト -->
+        <div id="district-palette" class="space-y-2 max-h-[430px] overflow-y-auto pr-1">
+          <!-- JSで動的生成 -->
+        </div>
+      </div>
+
+      <!-- 地形凡例（コンパクト） -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5">
+        <div class="text-[10px] font-bold text-slate-400 tracking-wider mb-1.5">TERRAIN // 地形効果</div>
+        <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+          <div class="flex items-center gap-1.5 text-slate-300">
+            <span class="w-2.5 h-2.5 rounded-sm bg-slate-500 inline-block"></span> 山岳 (建設不可/科学+)
+          </div>
+          <div class="flex items-center gap-1.5 text-sky-300">
+            <span class="w-2.5 h-2.5 rounded-sm bg-sky-500 inline-block"></span> 水源 (水路/商業+)
+          </div>
+          <div class="flex items-center gap-1.5 text-emerald-300">
+            <span class="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span> 森林 (聖域/工業+)
+          </div>
+          <div class="flex items-center gap-1.5 text-fuchsia-300">
+            <span class="w-2.5 h-2.5 rounded-sm bg-fuchsia-500 inline-block"></span> 地熱魔脈 (隣接強化)
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 中央パネル：インタラクティブ ヘックス盤面 (6カラム) -->
+    <section class="lg:col-span-6 bg-[#0E1525]/95 border border-slate-800 rounded-xl p-3 flex flex-col items-center justify-between relative overflow-hidden shadow-inner min-h-[460px]">
+      <!-- 上部ホバープレビュー情報バー -->
+      <div id="hover-inspector" class="w-full min-h-[46px] bg-slate-900/90 border border-slate-700/80 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2 z-10">
+        <div id="inspector-left" class="text-xs text-slate-300">
+          左から<span class="text-amber-300 font-bold">区域</span>を選び、盤面のヘックスにカーソルを合わせて隣接ボーナスを確認してください。
+        </div>
+        <div id="inspector-right" class="font-mono-num text-xs font-extrabold text-amber-400 whitespace-nowrap"></div>
+      </div>
+
+      <!-- SVG ヘックスグリッドコンテナ -->
+      <div class="relative w-full flex-1 flex items-center justify-center my-1">
+        <svg id="hex-svg" viewBox="-310 -275 620 550" class="w-full h-full max-h-[500px] drop-shadow-2xl">
+          <defs>
+            <!-- グローフィルター -->
+            <filter id="glow-gold" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-cyan" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          <!-- レイヤー1：ヘックスタイル本体 -->
+          <g id="layer-hexes"></g>
+          <!-- レイヤー2：隣接シナジー接続ビーム（ホバー時・連鎖時） -->
+          <g id="layer-beams"></g>
+          <!-- レイヤー3：ヘックス上の数値バッジ・デルタ表示 -->
+          <g id="layer-labels"></g>
+        </svg>
+      </div>
+
+      <!-- 下部アクションバー：時代突破ボタン＆コンボログ -->
+      <div class="w-full flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 z-10">
+        <div id="status-ticker" class="text-xs text-slate-300 truncate max-w-md">
+          💡 聖域は出力8以上になると周囲全マスに+2の連鎖ボーナスを波及させます！
+        </div>
+        <button id="btn-advance-era" disabled
+          class="px-4 py-1.5 rounded-lg font-extrabold text-xs sm:text-sm bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 shadow-lg transition-all flex items-center gap-1.5">
+          <span>目標達成！次の時代へ</span>
+          <span>▶</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 右パネル：制度・政策カード（ルール破壊モディファイア） (3カラム) -->
+    <aside class="lg:col-span-3 bg-[#111827]/95 border border-slate-800 rounded-xl p-3 flex flex-col justify-between gap-3 shadow-lg">
+      <div>
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+          <h2 class="text-xs font-extrabold tracking-wider text-purple-400 flex items-center gap-1.5">
+            <span>📜</span> 制定中の政策・制度カード
+          </h2>
+          <span id="policy-count-badge" class="text-[11px] font-mono-num px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30">
+            0 枚有効
+          </span>
+        </div>
+
+        <p class="text-[11px] text-slate-400 mb-2.5 leading-relaxed">
+          時代を進めるごとに獲得できる「ルール書き換えカード」。複数の政策が噛み合うと出力が指数関数的に爆発します。
+        </p>
+
+        <div id="active-policies-list" class="space-y-2 max-h-[390px] overflow-y-auto pr-1">
+          <!-- JSで動的生成 -->
+        </div>
+      </div>
+
+      <!-- 出力内訳サマリー -->
+      <div class="bg-slate-900/90 border border-amber-500/20 rounded-lg p-2.5">
+        <div class="text-[10px] font-bold text-amber-400 tracking-wider mb-1">EMPIRE BREAKDOWN // 出力内訳</div>
+        <div id="yield-breakdown-list" class="space-y-1 text-xs font-mono-num text-slate-300">
+          <div class="flex justify-between"><span class="text-slate-400">建設済み区域数:</span><span id="stat-districts">0</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">最大単一ヘックス出力:</span><span id="stat-max-hex" class="text-amber-300">0</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">三角陣形ボーナス発生:</span><span id="stat-triangles" class="text-cyan-300">0 箇所</span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- モーダル：時代クリア時の政策カードドラフト -->
+  <div id="modal-draft" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-[#111827] border-2 border-amber-400/80 rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl">
+      <div class="text-center mb-5">
+        <div class="text-xs font-mono-num tracking-widest text-emerald-400 font-bold">ERA TARGET SURPASSED // 時代目標達成</div>
+        <h2 class="font-title text-2xl sm:text-3xl font-extrabold text-white mt-1">新たな社会制度・政策の採択</h2>
+        <p class="text-xs sm:text-sm text-slate-300 mt-1">
+          隣接ルールを書き換える政策カードを1枚選択してください（次の時代は新しい地形＆より高い目標値になります）。
+        </p>
+      </div>
+
+      <div id="draft-cards-container" class="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-4">
+        <!-- JSで動的生成 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル：全5時代制覇クリア画面 -->
+  <div id="modal-victory" class="hidden fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-[#111827] border-2 border-emerald-400 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-center">
+      <div class="text-4xl mb-2">🏛️✨</div>
+      <div class="text-xs font-mono-num tracking-widest text-emerald-400 font-bold">CIVILIZATION ASCENDED</div>
+      <h2 class="font-title text-2xl sm:text-3xl font-extrabold text-amber-300 mt-1 mb-3">全5時代 都市計画制覇！</h2>
+      <p class="text-xs sm:text-sm text-slate-300 leading-relaxed mb-4">
+        あなたは地形と隣接ボーナスの連鎖を極め、圧倒的な都市出力を達成しました！<br/>
+        最終時代の都市出力: <span id="victory-final-score" class="font-mono-num font-extrabold text-amber-400 text-lg">0</span>
+      </p>
+      <div class="flex flex-col sm:flex-row gap-2.5 justify-center">
+        <button id="btn-victory-sandbox" class="px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs sm:text-sm transition">
+          🧪 サンドボックスで無限に遊ぶ
+        </button>
+        <button id="btn-victory-restart" class="px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs sm:text-sm transition">
+          ↻ 新しいランを始める
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * HEX ARCHITECT: YIELD OVERFLOW
+     * Civ6の区域隣接パズル × ローグライク政策ルール破壊プロトタイプ
+     */
+
+    // ==========================================
+    // 1. プロシージャル効果音エンジン (Web Audio API)
+    // ==========================================
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+
+      ensureCtx() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      // タイル配置時の心地よい石材クリック＋出力に応じた上昇和音
+      playPlace(totalGain) {
+        if (this.muted) return;
+        this.ensureCtx();
+        const now = this.ctx.currentTime;
+
+        // 1. 石材の打鍵音（クリック）
+        const clickOsc = this.ctx.createOscillator();
+        const clickGain = this.ctx.createGain();
+        clickOsc.type = 'triangle';
+        clickOsc.frequency.setValueAtTime(190, now);
+        clickOsc.frequency.exponentialRampToValueAtTime(65, now + 0.07);
+        clickGain.gain.setValueAtTime(0.22, now);
+        clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        clickOsc.connect(clickGain);
+        clickGain.connect(this.ctx.destination);
+        clickOsc.start(now);
+        clickOsc.stop(now + 0.085);
+
+        // 2. 獲得出力に応じたハーモニックチャイム
+        const clamped = Math.max(1, Math.min(totalGain, 35));
+        const baseFreq = 280 * Math.pow(1.045, clamped);
+        const notes = totalGain >= 14 ? [1, 1.25, 1.5, 2] : totalGain >= 7 ? [1, 1.25, 1.5] : [1, 1.25];
+
+        notes.forEach((ratio, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          const start = now + i * 0.045;
+          osc.frequency.setValueAtTime(baseFreq * ratio, start);
+          gain.gain.setValueAtTime(0.11, start);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.3);
+        });
+      }
+
+      playPin() {
+        if (this.muted) return;
+        this.ensureCtx();
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.06);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      }
+
+      playFanfare() {
+        if (this.muted) return;
+        this.ensureCtx();
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          const t = now + idx * 0.09;
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0.14, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.46);
+        });
+      }
+    }
+    const sfx = new SoundFX();
+
+    // ==========================================
+    // 2. ゲームデータ定義（地形・区域・政策カード・時代）
+    // ==========================================
+    const TERRAINS = {
+      PLAINS: {
+        id: 'PLAINS',
+        name: '平地',
+        color: '#1E293B',
+        stroke: '#334155',
+        buildable: true,
+        icon: ''
+      },
+      FOREST: {
+        id: 'FOREST',
+        name: '森林',
+        color: '#132A24',
+        stroke: '#059669',
+        buildable: true,
+        icon: '🌲'
+      },
+      MOUNTAIN: {
+        id: 'MOUNTAIN',
+        name: '山岳',
+        color: '#334155',
+        stroke: '#94A3B8',
+        buildable: false,
+        icon: '⛰️'
+      },
+      WATER: {
+        id: 'WATER',
+        name: '水源・オアシス',
+        color: '#0C2D48',
+        stroke: '#0284C7',
+        buildable: false,
+        icon: '💧'
+      },
+      GEOTHERMAL: {
+        id: 'GEOTHERMAL',
+        name: '地熱・魔脈',
+        color: '#2E1038',
+        stroke: '#C026D3',
+        buildable: false,
+        icon: '🌋'
+      }
+    };
+
+    const DISTRICTS = {
+      CAMPUS: {
+        id: 'CAMPUS',
+        name: 'キャンパス',
+        sub: 'SCIENCE // 研究所',
+        icon: '🔬',
+        color: '#0284C7',
+        bg: '#082F49',
+        border: '#38BDF8',
+        ruleDesc: '隣接する山岳・地熱ごとに +2。隣接区域2つごとに +1。'
+      },
+      INDUSTRIAL: {
+        id: 'INDUSTRIAL',
+        name: '工業地帯',
+        sub: 'PRODUCTION // 工房',
+        icon: '⚙️',
+        color: '#D97706',
+        bg: '#451A03',
+        border: '#FBBF24',
+        ruleDesc: '隣接する用水路ごとに +3。隣接する森林・区域ごとに +1。'
+      },
+      AQUEDUCT: {
+        id: 'AQUEDUCT',
+        name: '用水路・ダム',
+        sub: 'INFRA // 水利施設',
+        icon: '🌊',
+        color: '#0D9488',
+        bg: '#042F2E',
+        border: '#2DD4BF',
+        ruleDesc: '【条件】水源または山岳に隣接必須。隣接する工業地帯に +3、商業ハブに +2。'
+      },
+      COMMERCIAL: {
+        id: 'COMMERCIAL',
+        name: '商業ハブ',
+        sub: 'GOLD // 交易市場',
+        icon: '⚖️',
+        color: '#CA8A04',
+        bg: '#422006',
+        border: '#FACC15',
+        ruleDesc: '水源または用水路に隣接で +3。隣接するキャンパス・工業地帯ごとに +2。'
+      },
+      GOV_PLAZA: {
+        id: 'GOV_PLAZA',
+        name: '政府複合施設',
+        sub: 'CENTRAL // 中枢区',
+        icon: '🏛️',
+        color: '#E11D48',
+        bg: '#4C0519',
+        border: '#FB7185',
+        ruleDesc: '基礎出力 +2。隣接する全区域に +2 を与え、さらに出力倍率を +25% 増幅！'
+      },
+      SANCTUARY: {
+        id: 'SANCTUARY',
+        name: '聖地・保護区',
+        sub: 'HARMONY // 連鎖聖域',
+        icon: '✨',
+        color: '#059669',
+        bg: '#064E3B',
+        border: '#34D399',
+        ruleDesc: '森林・山岳・地熱ごとに +2。【連鎖】自身の出力が8以上で周囲全区域に +2 波及！'
+      }
+    };
+
+    const POLICIES = {
+      INDUSTRIAL_REV: {
+        id: 'INDUSTRIAL_REV',
+        name: '産業革命',
+        tag: 'POLICY // PRODUCTION',
+        rarity: 'RARE',
+        desc: 'すべての「工業地帯」の隣接ボーナスが 2倍 になる。'
+      },
+      RATIONALISM: {
+        id: 'RATIONALISM',
+        name: '合理主義',
+        tag: 'POLICY // MULTIPLIER',
+        rarity: 'EPIC',
+        desc: '隣接ボーナスが 6以上 ある区域の最終出力が 2倍 になる。'
+      },
+      GEOTHERMAL_LOOP: {
+        id: 'GEOTHERMAL_LOOP',
+        name: '地熱共鳴循環',
+        tag: 'POLICY // OVERFLOW',
+        rarity: 'EPIC',
+        desc: '「地熱・魔脈」に隣接する区域は、最も高い隣接区域のボーナス値をそのままコピーして加算する。'
+      },
+      GOLDEN_TRIANGLE: {
+        id: 'GOLDEN_TRIANGLE',
+        name: '黄金の三角計画',
+        tag: 'POLICY // GEOMETRY',
+        rarity: 'LEGENDARY',
+        desc: '互いに隣接する「3つの区域（三角形）」を形成している各区域は、出力 +5 ＆ 倍率 x1.5。'
+      },
+      LEYLINE_RESONANCE: {
+        id: 'LEYLINE_RESONANCE',
+        name: '中央集権の極致',
+        tag: 'POLICY // AMPLIFY',
+        rarity: 'RARE',
+        desc: '「政府複合施設」が周囲に与える隣接ボーナスと倍率バフが 2倍（+4 ＆ +50%）になる。'
+      },
+      ECO_SYNTHESIS: {
+        id: 'ECO_SYNTHESIS',
+        name: '自然環境保護法',
+        tag: 'POLICY // HARMONY',
+        rarity: 'COMMON',
+        desc: '「森林」の上に建てられた区域は基礎出力 +4。「聖地・保護区」の連鎖条件が 8 → 5 に緩和。'
+      }
+    };
+
+    const ERAS = [
+      { era: 1, name: '古典時代', target: 26, maxBuilds: 5 },
+      { era: 2, name: '中世時代', target: 48, maxBuilds: 6 },
+      { era: 3, name: 'ルネサンス時代', target: 85, maxBuilds: 7 },
+      { era: 4, name: '産業時代', target: 145, maxBuilds: 8 },
+      { era: 5, name: '情報・未来時代', target: 240, maxBuilds: 9 }
+    ];
+
+    // ==========================================
+    // 3. ヘックス座標演算（Axial Coordinates: q, r）
+    // ==========================================
+    const HEX_RADIUS = 2; // 半径2 = 19ヘックス (1 + 6 + 12)
+    const HEX_SIZE = 52;  // SVG上の六角形外接円半径
+
+    const HEX_DIRS = [
+      { q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 },
+      { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }
+    ];
+
+    function hexKey(q, r) {
+      return `${q},${r}`;
+    }
+
+    function hexToPixel(q, r) {
+      // Pointy-top hex
+      const x = HEX_SIZE * Math.sqrt(3) * (q + r / 2);
+      const y = HEX_SIZE * (3 / 2) * r;
+      return { x, y };
+    }
+
+    function getHexPolygonPoints(cx, cy, size) {
+      const pts = [];
+      for (let i = 0; i < 6; i++) {
+        const angleDeg = 60 * i - 30;
+        const angleRad = (Math.PI / 180) * angleDeg;
+        const px = cx + size * Math.cos(angleRad);
+        const py = cy + size * Math.sin(angleRad);
+        pts.push(`${px.toFixed(1)},${py.toFixed(1)}`);
+      }
+      return pts.join(' ');
+    }
+
+    // ==========================================
+    // 4. ゲーム状態
+    // ==========================================
+    let state = {
+      eraIndex: 0,
+      sandboxMode: false,
+      pinMode: false,
+      selectedDistrict: 'CAMPUS',
+      hoveredKey: null,
+      hexes: new Map(), // key -> { q, r, terrain, district, pin }
+      history: [],      // Undo用スナップショット
+      activePolicies: [],
+      buildsUsed: 0,
+      maxBuilds: 5
+    };
+
+    // ==========================================
+    // 5. マップ生成ロジック
+    // ==========================================
+    function generateMap() {
+      state.hexes.clear();
+      state.history = [];
+      state.buildsUsed = 0;
+      state.maxBuilds = state.sandboxMode ? 19 : ERAS[state.eraIndex].maxBuilds;
+
+      // 半径2の19ヘックスを生成
+      const coords = [];
+      for (let q = -HEX_RADIUS; q <= HEX_RADIUS; q++) {
+        const r1 = Math.max(-HEX_RADIUS, -q - HEX_RADIUS);
+        const r2 = Math.min(HEX_RADIUS, -q + HEX_RADIUS);
+        for (let r = r1; r <= r2; r++) {
+          coords.push({ q, r });
+        }
+      }
+
+      // 地形のバランス良い配置（必ずパズルが成立するように配分）
+      const terrainPool = [
+        'MOUNTAIN', 'MOUNTAIN',
+        'WATER', 'WATER',
+        'GEOTHERMAL',
+        'FOREST', 'FOREST', 'FOREST', 'FOREST',
+        'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS', 'PLAINS'
+      ];
+
+      // シャッフル
+      for (let i = terrainPool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [terrainPool[i], terrainPool[j]] = [terrainPool[j], terrainPool[i]];
+      }
+
+      coords.forEach((c, idx) => {
+        // 中央(0,0)は必ず建設可能な平地か森林にする
+        let t = terrainPool[idx];
+        if (c.q === 0 && c.r === 0 && !TERRAINS[t].buildable) {
+          t = 'PLAINS';
+        }
+        state.hexes.set(hexKey(c.q, c.r), {
+          q: c.q,
+          r: c.r,
+          terrain: t,
+          district: null,
+          pin: null
+        });
+      });
+
+      renderAll();
+    }
+
+    function getNeighbors(q, r) {
+      const list = [];
+      HEX_DIRS.forEach(d => {
+        const n = state.hexes.get(hexKey(q + d.q, r + d.r));
+        if (n) list.push(n);
+      });
+      return list;
+    }
+
+    // ==========================================
+    // 6. 隣接ボーナス＆連鎖計算エンジン（核となるロジック）
+    // ==========================================
+    function canPlaceDistrict(hex, districtId) {
+      if (!hex || hex.district) return { ok: false, reason: '既に区域が建設されています' };
+      const terrainInfo = TERRAINS[hex.terrain];
+      if (!terrainInfo.buildable) {
+        return { ok: false, reason: `${terrainInfo.name}には建設できません` };
+      }
+
+      // 用水路・ダムの特殊配置条件：水源または山岳に隣接必須
+      if (districtId === 'AQUEDUCT') {
+        const neighbors = getNeighbors(hex.q, hex.r);
+        const hasWaterOrMountain = neighbors.some(n => n.terrain === 'WATER' || n.terrain === 'MOUNTAIN');
+        if (!hasWaterOrMountain) {
+          return { ok: false, reason: '用水路は「水源」または「山岳」に隣接する必要があります' };
+        }
+      }
+
+      return { ok: true, reason: '' };
+    }
+
+    /**
+     * 盤面全体の出力を計算する純粋関数（現在値計算＆ホバー予測シミュレーション共通）
+     * @param {Map} hexMap
+     * @param {Array} policies
+     */
+    function evaluateBoardYields(hexMap, policies) {
+      const hasPolicy = (id) => policies.includes(id);
+      const results = new Map(); // key -> { total, baseAdj, mult, sources: [key...], inTriangle: bool }
+
+      // ヘルパー：指定マップの隣接取得
+      const getMapNeighbors = (q, r) => {
+        const res = [];
+        HEX_DIRS.forEach(d => {
+          const item = hexMap.get(hexKey(q + d.q, r + d.r));
+          if (item) res.push(item);
+        });
+        return res;
+      };
+
+      // パス1：基本隣接ボーナス計算
+      hexMap.forEach((hex, key) => {
+        if (!hex.district) return;
+        const neighbors = getMapNeighbors(hex.q, hex.r);
+        let adj = 0;
+        const sources = [];
+
+        if (hex.district === 'CAMPUS') {
+          let districtCount = 0;
+          neighbors.forEach(n => {
+            if (n.terrain === 'MOUNTAIN' || n.terrain === 'GEOTHERMAL') {
+              adj += 2;
+              sources.push(hexKey(n.q, n.r));
+            }
+            if (n.district) {
+              districtCount++;
+            }
+          });
+          if (districtCount >= 2) {
+            adj += Math.floor(districtCount / 2);
+            neighbors.filter(n => n.district).forEach(n => sources.push(hexKey(n.q, n.r)));
+          }
+        } else if (hex.district === 'INDUSTRIAL') {
+          neighbors.forEach(n => {
+            if (n.district === 'AQUEDUCT') {
+              adj += 3;
+              sources.push(hexKey(n.q, n.r));
+            } else if (n.terrain === 'FOREST' || n.district) {
+              adj += 1;
+              sources.push(hexKey(n.q, n.r));
+            }
+          });
+          if (hasPolicy('INDUSTRIAL_REV')) {
+            adj *= 2;
+          }
+        } else if (hex.district === 'AQUEDUCT') {
+          adj = 2; // 基礎水利出力
+          neighbors.forEach(n => {
+            if (n.terrain === 'WATER' || n.terrain === 'MOUNTAIN') {
+              adj += 1;
+              sources.push(hexKey(n.q, n.r));
+            }
+          });
+        } else if (hex.district === 'COMMERCIAL') {
+          let hasWater = false;
+          neighbors.forEach(n => {
+            if ((n.terrain === 'WATER' || n.district === 'AQUEDUCT') && !hasWater) {
+              adj += 3;
+              hasWater = true;
+              sources.push(hexKey(n.q, n.r));
+            }
+            if (n.district === 'CAMPUS' || n.district === 'INDUSTRIAL') {
+              adj += 2;
+              sources.push(hexKey(n.q, n.r));
+            }
+          });
+        } else if (hex.district === 'GOV_PLAZA') {
+          adj = 2;
+          neighbors.forEach(n => {
+            if (n.district) {
+              adj += 1;
+              sources.push(hexKey(n.q, n.r));
+            }
+          });
+        } else if (hex.district === 'SANCTUARY') {
+          neighbors.forEach(n => {
+            if (n.terrain === 'FOREST' || n.terrain === 'MOUNTAIN' || n.terrain === 'GEOTHERMAL') {
+              adj += 2;
+              sources.push(hexKey(n.q, n.r));
+            }
+          });
+        }
+
+        // 森林環境保護法ポリシー
+        if (hasPolicy('ECO_SYNTHESIS') && hex.terrain === 'FOREST') {
+          adj += 4;
+        }
+
+        // 政府複合施設からのバフ受領
+        let mult = 1.0;
+        const govBonusPerPlaza = hasPolicy('LEYLINE_RESONANCE') ? 4 : 2;
+        const govMultPerPlaza = hasPolicy('LEYLINE_RESONANCE') ? 0.50 : 0.25;
+        neighbors.forEach(n => {
+          if (n.district === 'GOV_PLAZA') {
+            adj += govBonusPerPlaza;
+            mult += govMultPerPlaza;
+            sources.push(hexKey(n.q, n.r));
+          }
+        });
+
+        results.set(key, {
+          baseAdj: adj,
+          mult,
+          total: 0,
+          sources: [...new Set(sources)],
+          inTriangle: false
+        });
+      });
+
+      // パス2：政策「地熱共鳴循環」の適用（地熱隣接時、隣接区域の最高基礎隣接値をコピー）
+      if (hasPolicy('GEOTHERMAL_LOOP')) {
+        hexMap.forEach((hex, key) => {
+          if (!hex.district) return;
+          const neighbors = getMapNeighbors(hex.q, hex.r);
+          const geoNeighbors = neighbors.filter(n => n.terrain === 'GEOTHERMAL');
+          if (geoNeighbors.length > 0) {
+            let maxNeighborAdj = 0;
+            neighbors.forEach(n => {
+              if (n.district && results.has(hexKey(n.q, n.r))) {
+                maxNeighborAdj = Math.max(maxNeighborAdj, results.get(hexKey(n.q, n.r)).baseAdj);
+              }
+            });
+            if (maxNeighborAdj > 0) {
+              const entry = results.get(key);
+              entry.baseAdj += maxNeighborAdj;
+              geoNeighbors.forEach(g => entry.sources.push(hexKey(g.q, g.r)));
+            }
+          }
+        });
+      }
+
+      // パス3：聖地・保護区の連鎖波及（一定出力以上で周囲全区域に+2）
+      const sanctuaryThreshold = hasPolicy('ECO_SYNTHESIS') ? 5 : 8;
+      const sanctuaryBoosts = new Map(); // targetKey -> bonus
+      hexMap.forEach((hex, key) => {
+        if (hex.district === 'SANCTUARY') {
+          const entry = results.get(key);
+          if (entry && entry.baseAdj >= sanctuaryThreshold) {
+            const neighbors = getMapNeighbors(hex.q, hex.r);
+            neighbors.forEach(n => {
+              if (n.district) {
+                const nk = hexKey(n.q, n.r);
+                sanctuaryBoosts.set(nk, (sanctuaryBoosts.get(nk) || 0) + 2);
+                results.get(nk).sources.push(key);
+              }
+            });
+          }
+        }
+      });
+      sanctuaryBoosts.forEach((bonus, targetKey) => {
+        results.get(targetKey).baseAdj += bonus;
+      });
+
+      // パス4：三角形陣形（3つの区域が相互に隣接）の検出
+      let triangleCount = 0;
+      const districtKeys = Array.from(results.keys());
+      for (let i = 0; i < districtKeys.length; i++) {
+        for (let j = i + 1; j < districtKeys.length; j++) {
+          const h1 = hexMap.get(districtKeys[i]);
+          const h2 = hexMap.get(districtKeys[j]);
+          if (!areHexesAdjacent(h1, h2)) continue;
+          for (let k = j + 1; k < districtKeys.length; k++) {
+            const h3 = hexMap.get(districtKeys[k]);
+            if (areHexesAdjacent(h1, h3) && areHexesAdjacent(h2, h3)) {
+              triangleCount++;
+              if (hasPolicy('GOLDEN_TRIANGLE')) {
+                results.get(districtKeys[i]).inTriangle = true;
+                results.get(districtKeys[j]).inTriangle = true;
+                results.get(districtKeys[k]).inTriangle = true;
+              }
+            }
+          }
+        }
+      }
+
+      // パス5：最終出力確定（合理主義＆黄金の三角計画適用）
+      let empireTotal = 0;
+      let maxSingleHex = 0;
+
+      results.forEach((entry) => {
+        let adj = entry.baseAdj;
+        let mult = entry.mult;
+
+        if (entry.inTriangle && hasPolicy('GOLDEN_TRIANGLE')) {
+          adj += 5;
+          mult *= 1.5;
+        }
+
+        let finalVal = Math.round(adj * mult);
+
+        if (hasPolicy('RATIONALISM') && adj >= 6) {
+          finalVal *= 2;
+        }
+
+        entry.total = finalVal;
+        entry.sources = [...new Set(entry.sources)];
+        empireTotal += finalVal;
+        maxSingleHex = Math.max(maxSingleHex, finalVal);
+      });
+
+      return {
+        byHex: results,
+        empireTotal,
+        maxSingleHex,
+        triangleCount
+      };
+    }
+
+    function areHexesAdjacent(a, b) {
+      const dq = Math.abs(a.q - b.q);
+      const dr = Math.abs(a.r - b.r);
+      const ds = Math.abs((-a.q - a.r) - (-b.q - b.r));
+      return dq <= 1 && dr <= 1 && ds <= 1 && (dq + dr + ds === 2);
+    }
+
+    // ==========================================
+    // 7. インタラクション（建設・ピン打ち・ホバー予測）
+    // ==========================================
+    function handleHexClick(key) {
+      const hex = state.hexes.get(key);
+      if (!hex) return;
+
+      // ピンモード中の処理
+      if (state.pinMode) {
+        if (hex.district) {
+          setStatus('既に建設済みのマスにはピンを打てません。');
+          return;
+        }
+        if (hex.pin === state.selectedDistrict) {
+          hex.pin = null;
+          setStatus('計画ピンを解除しました。');
+        } else {
+          const check = canPlaceDistrict(hex, state.selectedDistrict);
+          if (!check.ok) {
+            setStatus(`⚠ ピン配置不可: ${check.reason}`);
+            return;
+          }
+          hex.pin = state.selectedDistrict;
+          setStatus(`📍 [${DISTRICTS[state.selectedDistrict].name}] の都市計画ピンを設置しました。`);
+        }
+        sfx.playPin();
+        renderAll();
+        return;
+      }
+
+      // 通常建設モード
+      if (!state.sandboxMode && state.buildsUsed >= state.maxBuilds) {
+        setStatus('⚠ この時代の建設枠が上限に達しています！時代を進めるか「1手戻す」を使用してください。');
+        return;
+      }
+
+      const check = canPlaceDistrict(hex, state.selectedDistrict);
+      if (!check.ok) {
+        setStatus(`⚠ 建設不可: ${check.reason}`);
+        return;
+      }
+
+      // 建設前の総出力を記録（差分演出用）
+      const beforeEval = evaluateBoardYields(state.hexes, state.activePolicies);
+
+      // Undo用に現在の盤面を保存
+      saveSnapshot();
+
+      // 建設実行
+      hex.district = state.selectedDistrict;
+      hex.pin = null;
+      state.buildsUsed++;
+
+      const afterEval = evaluateBoardYields(state.hexes, state.activePolicies);
+      const totalGain = afterEval.empireTotal - beforeEval.empireTotal;
+      const tileYield = afterEval.byHex.get(key)?.total || 0;
+
+      sfx.playPlace(totalGain);
+      spawnFloatingYieldOnHex(hex, totalGain, tileYield);
+
+      if (totalGain >= 15) {
+        setStatus(`🔥 MEGA COMBO!! 連鎖ボーナスにより都市総出力が +${totalGain} 跳ね上がりました！`);
+      } else {
+        setStatus(`✅ [${DISTRICTS[hex.district].name}] を建設（単体出力: +${tileYield} / 都市総増加: +${totalGain}）`);
+      }
+
+      renderAll();
+    }
+
+    function saveSnapshot() {
+      const snap = {
+        buildsUsed: state.buildsUsed,
+        hexes: Array.from(state.hexes.entries()).map(([k, v]) => [k, { ...v }])
+      };
+      state.history.push(snap);
+    }
+
+    function undoLastAction() {
+      if (state.history.length === 0) {
+        setStatus('戻せる操作がありません。');
+        return;
+      }
+      const snap = state.history.pop();
+      state.buildsUsed = snap.buildsUsed;
+      state.hexes = new Map(snap.hexes);
+      sfx.playPin();
+      setStatus('↩ 直前の建設を取り消しました。');
+      renderAll();
+    }
+
+    function clearAllPins() {
+      let cleared = 0;
+      state.hexes.forEach(h => {
+        if (h.pin) {
+          h.pin = null;
+          cleared++;
+        }
+      });
+      if (cleared > 0) {
+        sfx.playPin();
+        setStatus(`📍 ${cleared} 個の都市計画ピンを消去しました。`);
+        renderAll();
+      }
+    }
+
+    function spawnFloatingYieldOnHex(hex, totalGain, tileYield) {
+      const svgEl = document.getElementById('hex-svg');
+      const rect = svgEl.getBoundingClientRect();
+      const pt = hexToPixel(hex.q, hex.r);
+      // SVG viewBox (-310, -275, 620, 550) から画面座標へ変換
+      const screenX = rect.left + ((pt.x + 310) / 620) * rect.width;
+      const screenY = rect.top + ((pt.y + 275) / 550) * rect.height;
+
+      const el = document.createElement('div');
+      el.className = 'floating-yield text-lg sm:text-2xl';
+      el.style.left = `${screenX}px`;
+      el.style.top = `${screenY - 12}px`;
+
+      if (totalGain >= 15) {
+        el.style.color = '#FBBF24';
+        el.textContent = `+${totalGain} OVERFLOW!!`;
+      } else if (totalGain > tileYield) {
+        el.style.color = '#34D399';
+        el.textContent = `+${totalGain} (連鎖!)`;
+      } else {
+        el.style.color = '#38BDF8';
+        el.textContent = `+${totalGain}`;
+      }
+
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1050);
+    }
+
+    // ==========================================
+    // 8. UIレンダリング（盤面・プレビュービーム・左右パネル）
+    // ==========================================
+    function renderAll() {
+      const currentEval = evaluateBoardYields(state.hexes, state.activePolicies);
+
+      // ホバー中の予測シミュレーション
+      let previewEval = null;
+      let hoveredCanBuild = false;
+      if (state.hoveredKey) {
+        const hHex = state.hexes.get(state.hoveredKey);
+        if (hHex && !hHex.district) {
+          const check = canPlaceDistrict(hHex, state.selectedDistrict);
+          hoveredCanBuild = check.ok;
+          if (check.ok) {
+            const clonedMap = new Map();
+            state.hexes.forEach((v, k) => clonedMap.set(k, { ...v }));
+            clonedMap.get(state.hoveredKey).district = state.selectedDistrict;
+            previewEval = evaluateBoardYields(clonedMap, state.activePolicies);
+          }
+        }
+      }
+
+      renderTopBar(currentEval);
+      renderHexBoard(currentEval, previewEval, hoveredCanBuild);
+      renderLeftPalette();
+      renderRightPolicies(currentEval);
+      updateHoverInspector(currentEval, previewEval, hoveredCanBuild);
+    }
+
+    function renderTopBar(currentEval) {
+      const eraObj = ERAS[state.eraIndex];
+      const target = eraObj.target;
+      const total = currentEval.empireTotal;
+
+      document.getElementById('era-badge').textContent = state.sandboxMode
+        ? 'SANDBOX // 自由検証モード'
+        : `ERA ${eraObj.era} / ${ERAS.length} // ${eraObj.name}`;
+
+      document.getElementById('current-yield-text').textContent = total;
+      document.getElementById('target-yield-text').textContent = state.sandboxMode ? '∞' : target;
+
+      const pct = state.sandboxMode ? 100 : Math.min(100, (total / target) * 100);
+      document.getElementById('yield-progress-bar').style.width = `${pct}%`;
+
+      const advBtn = document.getElementById('btn-advance-era');
+      if (state.sandboxMode) {
+        advBtn.disabled = true;
+        advBtn.innerHTML = '<span>サンドボックス稼働中</span>';
+      } else if (total >= target) {
+        advBtn.disabled = false;
+        advBtn.innerHTML = state.eraIndex === ERAS.length - 1
+          ? '<span>🎉 文明制覇を達成！</span>'
+          : '<span>目標達成！次の時代へ</span><span>▶</span>';
+      } else {
+        advBtn.disabled = true;
+        advBtn.innerHTML = `<span>あと ${target - total} 出力で達成</span>`;
+      }
+    }
+
+    function renderHexBoard(currentEval, previewEval, hoveredCanBuild) {
+      const layerHexes = document.getElementById('layer-hexes');
+      const layerBeams = document.getElementById('layer-beams');
+      const layerLabels = document.getElementById('layer-labels');
+
+      layerHexes.innerHTML = '';
+      layerBeams.innerHTML = '';
+      layerLabels.innerHTML = '';
+
+      state.hexes.forEach((hex, key) => {
+        const { x, y } = hexToPixel(hex.q, hex.r);
+        const tInfo = TERRAINS[hex.terrain];
+        const dInfo = hex.district ? DISTRICTS[hex.district] : null;
+        const pInfo = hex.pin ? DISTRICTS[hex.pin] : null;
+        const isHovered = state.hoveredKey === key;
+
+        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.setAttribute('class', 'hex-group');
+        group.addEventListener('mouseenter', () => {
+          state.hoveredKey = key;
+          renderAll();
+        });
+        group.addEventListener('mouseleave', () => {
+          if (state.hoveredKey === key) {
+            state.hoveredKey = null;
+            renderAll();
+          }
+        });
+        group.addEventListener('click', () => handleHexClick(key));
+
+        // ベース六角形
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', getHexPolygonPoints(x, y, HEX_SIZE - 2.5));
+        poly.setAttribute('class', 'hex-base');
+
+        let fillCol = tInfo.color;
+        let strokeCol = tInfo.stroke;
+        let strokeW = '1.8';
+
+        if (dInfo) {
+          fillCol = dInfo.bg;
+          strokeCol = dInfo.border;
+          strokeW = '2.8';
+        } else if (isHovered && hoveredCanBuild) {
+          fillCol = DISTRICTS[state.selectedDistrict].bg;
+          strokeCol = '#FBBF24';
+          strokeW = '3';
+        } else if (isHovered && !hoveredCanBuild) {
+          strokeCol = '#F43F5E';
+          strokeW = '2.5';
+        }
+
+        poly.setAttribute('fill', fillCol);
+        poly.setAttribute('stroke', strokeCol);
+        poly.setAttribute('stroke-width', strokeW);
+        group.appendChild(poly);
+
+        // 三角形陣形ハイライト内枠
+        const evalEntry = currentEval.byHex.get(key);
+        if (evalEntry && evalEntry.inTriangle) {
+          const innerTri = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          innerTri.setAttribute('points', getHexPolygonPoints(x, y, HEX_SIZE - 8));
+          innerTri.setAttribute('fill', 'none');
+          innerTri.setAttribute('stroke', '#F59E0B');
+          innerTri.setAttribute('stroke-width', '1.2');
+          innerTri.setAttribute('stroke-dasharray', '4 3');
+          group.appendChild(innerTri);
+        }
+
+        // アイコン＆名称表示
+        if (dInfo) {
+          // 建設済み区域
+          const iconTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          iconTxt.setAttribute('x', x);
+          iconTxt.setAttribute('y', y - 6);
+          iconTxt.setAttribute('text-anchor', 'middle');
+          iconTxt.setAttribute('font-size', '22');
+          iconTxt.textContent = dInfo.icon;
+          group.appendChild(iconTxt);
+
+          const nameTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          nameTxt.setAttribute('x', x);
+          nameTxt.setAttribute('y', y + 11);
+          nameTxt.setAttribute('text-anchor', 'middle');
+          nameTxt.setAttribute('fill', '#E2E8F0');
+          nameTxt.setAttribute('font-size', '9.5');
+          nameTxt.setAttribute('font-weight', '700');
+          nameTxt.textContent = dInfo.name;
+          group.appendChild(nameTxt);
+        } else if (isHovered && hoveredCanBuild) {
+          // ホバーゴーストプレビュー
+          const ghostD = DISTRICTS[state.selectedDistrict];
+          const iconTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          iconTxt.setAttribute('x', x);
+          iconTxt.setAttribute('y', y - 4);
+          iconTxt.setAttribute('text-anchor', 'middle');
+          iconTxt.setAttribute('font-size', '22');
+          iconTxt.setAttribute('opacity', '0.75');
+          iconTxt.textContent = ghostD.icon;
+          group.appendChild(iconTxt);
+
+          const nameTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          nameTxt.setAttribute('x', x);
+          nameTxt.setAttribute('y', y + 12);
+          nameTxt.setAttribute('text-anchor', 'middle');
+          nameTxt.setAttribute('fill', '#FDE68A');
+          nameTxt.setAttribute('font-size', '9');
+          nameTxt.setAttribute('font-weight', '700');
+          nameTxt.textContent = '配置プレビュー';
+          group.appendChild(nameTxt);
+        } else if (pInfo) {
+          // Civ6風 都市計画ピン
+          const pinCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          pinCircle.setAttribute('cx', x);
+          pinCircle.setAttribute('cy', y - 5);
+          pinCircle.setAttribute('r', '14');
+          pinCircle.setAttribute('fill', 'rgba(6, 182, 212, 0.18)');
+          pinCircle.setAttribute('stroke', '#22D3EE');
+          pinCircle.setAttribute('stroke-width', '1.5');
+          pinCircle.setAttribute('stroke-dasharray', '3 2');
+          group.appendChild(pinCircle);
+
+          const iconTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          iconTxt.setAttribute('x', x);
+          iconTxt.setAttribute('y', y + 1);
+          iconTxt.setAttribute('text-anchor', 'middle');
+          iconTxt.setAttribute('font-size', '15');
+          iconTxt.textContent = pInfo.icon;
+          group.appendChild(iconTxt);
+
+          const pinTag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          pinTag.setAttribute('x', x);
+          pinTag.setAttribute('y', y + 18);
+          pinTag.setAttribute('text-anchor', 'middle');
+          pinTag.setAttribute('fill', '#22D3EE');
+          pinTag.setAttribute('font-size', '8.5');
+          pinTag.setAttribute('font-weight', '700');
+          pinTag.textContent = `📍${pInfo.name}`;
+          group.appendChild(pinTag);
+        } else {
+          // 素の地形表示
+          if (tInfo.icon) {
+            const tIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tIcon.setAttribute('x', x);
+            tIcon.setAttribute('y', y + 3);
+            tIcon.setAttribute('text-anchor', 'middle');
+            tIcon.setAttribute('font-size', '20');
+            tIcon.textContent = tInfo.icon;
+            group.appendChild(tIcon);
+          }
+          const tName = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          tName.setAttribute('x', x);
+          tName.setAttribute('y', y + 20);
+          tName.setAttribute('text-anchor', 'middle');
+          tName.setAttribute('fill', '#94A3B8');
+          tName.setAttribute('font-size', '8.5');
+          tName.textContent = tInfo.name;
+          group.appendChild(tName);
+        }
+
+        layerHexes.appendChild(group);
+
+        // 出力数値バッジの描画（建設済みマス）
+        if (dInfo && evalEntry) {
+          const prevEntry = previewEval ? previewEval.byHex.get(key) : null;
+          const delta = prevEntry ? prevEntry.total - evalEntry.total : 0;
+
+          const badgeG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          badgeG.setAttribute('pointer-events', 'none');
+
+          const pillW = delta > 0 ? 56 : 36;
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', x - pillW / 2);
+          rect.setAttribute('y', y + 17);
+          rect.setAttribute('width', pillW);
+          rect.setAttribute('height', '16');
+          rect.setAttribute('rx', '8');
+          rect.setAttribute('fill', delta > 0 ? '#065F46' : '#0F172A');
+          rect.setAttribute('stroke', delta > 0 ? '#34D399' : '#F59E0B');
+          rect.setAttribute('stroke-width', '1.4');
+          badgeG.appendChild(rect);
+
+          const valTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          valTxt.setAttribute('x', x);
+          valTxt.setAttribute('y', y + 28.5);
+          valTxt.setAttribute('text-anchor', 'middle');
+          valTxt.setAttribute('fill', delta > 0 ? '#6EE7B7' : '#FBBF24');
+          valTxt.setAttribute('font-family', 'JetBrains Mono, monospace');
+          valTxt.setAttribute('font-size', '10');
+          valTxt.setAttribute('font-weight', '800');
+          valTxt.textContent = delta > 0 ? `+${evalEntry.total}→+${prevEntry.total}` : `+${evalEntry.total}`;
+          badgeG.appendChild(valTxt);
+
+          layerLabels.appendChild(badgeG);
+        }
+      });
+
+      // ホバー予測時のシナジービーム＆新規マスの予測スコアバッジ描画
+      if (state.hoveredKey && previewEval && hoveredCanBuild) {
+        const targetHex = state.hexes.get(state.hoveredKey);
+        const targetPt = hexToPixel(targetHex.q, targetHex.r);
+        const newEntry = previewEval.byHex.get(state.hoveredKey);
+
+        // 1. 貢献元タイルからの黄金ビーム
+        if (newEntry && newEntry.sources) {
+          newEntry.sources.forEach(srcKey => {
+            const srcHex = state.hexes.get(srcKey);
+            if (!srcHex) return;
+            const srcPt = hexToPixel(srcHex.q, srcHex.r);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', srcPt.x);
+            line.setAttribute('y1', srcPt.y);
+            line.setAttribute('x2', targetPt.x);
+            line.setAttribute('y2', targetPt.y);
+            line.setAttribute('stroke', '#FBBF24');
+            line.setAttribute('stroke-dasharray', '5 3');
+            line.setAttribute('class', 'synergy-beam');
+            line.setAttribute('filter', 'url(#glow-gold)');
+            layerBeams.appendChild(line);
+          });
+        }
+
+        // 2. この配置によって出力が上昇する既存隣接タイルへのエメラルドビーム
+        previewEval.byHex.forEach((pEntry, k) => {
+          if (k === state.hoveredKey) return;
+          const oldEntry = currentEval.byHex.get(k);
+          if (oldEntry && pEntry.total > oldEntry.total) {
+            const nHex = state.hexes.get(k);
+            const nPt = hexToPixel(nHex.q, nHex.r);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', targetPt.x);
+            line.setAttribute('y1', targetPt.y);
+            line.setAttribute('x2', nPt.x);
+            line.setAttribute('y2', nPt.y);
+            line.setAttribute('stroke', '#34D399');
+            line.setAttribute('class', 'synergy-beam');
+            line.setAttribute('filter', 'url(#glow-cyan)');
+            layerBeams.appendChild(line);
+          }
+        });
+
+        // 3. ホバー中マスの予測出力ピル
+        if (newEntry) {
+          const badgeG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          badgeG.setAttribute('pointer-events', 'none');
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', targetPt.x - 24);
+          rect.setAttribute('y', targetPt.y + 17);
+          rect.setAttribute('width', '48');
+          rect.setAttribute('height', '18');
+          rect.setAttribute('rx', '9');
+          rect.setAttribute('fill', '#F59E0B');
+          rect.setAttribute('stroke', '#FFFFFF');
+          rect.setAttribute('stroke-width', '1.5');
+          badgeG.appendChild(rect);
+
+          const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          txt.setAttribute('x', targetPt.x);
+          txt.setAttribute('y', targetPt.y + 29.5);
+          txt.setAttribute('text-anchor', 'middle');
+          txt.setAttribute('fill', '#0F172A');
+          txt.setAttribute('font-family', 'JetBrains Mono, monospace');
+          txt.setAttribute('font-size', '11');
+          txt.setAttribute('font-weight', '900');
+          txt.textContent = `+${newEntry.total}`;
+          badgeG.appendChild(txt);
+          layerLabels.appendChild(badgeG);
+        }
+      }
+    }
+
+    function updateHoverInspector(currentEval, previewEval, hoveredCanBuild) {
+      const leftEl = document.getElementById('inspector-left');
+      const rightEl = document.getElementById('inspector-right');
+
+      if (!state.hoveredKey) {
+        const d = DISTRICTS[state.selectedDistrict];
+        leftEl.innerHTML = `選択中: <span class="text-amber-300 font-bold">${d.icon} ${d.name}</span> — <span class="text-slate-400">${d.ruleDesc}</span>`;
+        rightEl.textContent = '';
+        return;
+      }
+
+      const hex = state.hexes.get(state.hoveredKey);
+      const tInfo = TERRAINS[hex.terrain];
+
+      if (hex.district) {
+        const d = DISTRICTS[hex.district];
+        const entry = currentEval.byHex.get(state.hoveredKey);
+        leftEl.innerHTML = `<span class="font-bold text-white">${d.icon} ${d.name}</span> <span class="text-slate-400">(地形: ${tInfo.name})</span> — 基礎隣接: <span class="text-cyan-300 font-mono-num">${entry.baseAdj}</span> / 倍率: <span class="text-purple-300 font-mono-num">x${entry.mult.toFixed(2)}</span>`;
+        rightEl.textContent = `現在出力: +${entry.total}`;
+        return;
+      }
+
+      const check = canPlaceDistrict(hex, state.selectedDistrict);
+      if (!check.ok) {
+        leftEl.innerHTML = `<span class="text-slate-300 font-bold">[${tInfo.name}]</span> <span class="text-rose-400 font-bold">✕ ${check.reason}</span>`;
+        rightEl.textContent = '';
+        return;
+      }
+
+      if (previewEval) {
+        const totalDelta = previewEval.empireTotal - currentEval.empireTotal;
+        const selfYield = previewEval.byHex.get(state.hoveredKey).total;
+        const chainBonus = totalDelta - selfYield;
+        leftEl.innerHTML = `予測 [${tInfo.name}]: 単体 <span class="text-amber-300 font-mono-num font-bold">+${selfYield}</span>` +
+          (chainBonus > 0 ? ` ＋ 隣接連鎖 <span class="text-emerald-400 font-mono-num font-bold">+${chainBonus}</span>` : '');
+        rightEl.textContent = `都市総増加: +${totalDelta}`;
+      }
+    }
+
+    function renderLeftPalette() {
+      const container = document.getElementById('district-palette');
+      container.innerHTML = '';
+
+      document.getElementById('placements-left-badge').textContent = state.sandboxMode
+        ? '建設枠: 無制限'
+        : `建設枠: ${state.maxBuilds - state.buildsUsed} / ${state.maxBuilds}`;
+
+      Object.values(DISTRICTS).forEach(d => {
+        const isSelected = state.selectedDistrict === d.id;
+        const btn = document.createElement('button');
+        btn.className = `w-full p-2.5 rounded-lg border text-left transition-all ${
+          isSelected
+            ? 'bg-slate-800/95 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+            : 'bg-slate-900/70 border-slate-800 hover:border-slate-600'
+        }`;
+        btn.onclick = () => {
+          state.selectedDistrict = d.id;
+          sfx.playPin();
+          renderAll();
+        };
+
+        btn.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">${d.icon}</span>
+              <div>
+                <div class="text-xs font-extrabold ${isSelected ? 'text-amber-300' : 'text-slate-200'}">${d.name}</div>
+                <div class="text-[9px] font-mono-num text-slate-500">${d.sub}</div>
+              </div>
+            </div>
+            ${isSelected ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">選択中</span>' : ''}
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">${d.ruleDesc}</p>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function renderRightPolicies(currentEval) {
+      const listEl = document.getElementById('active-policies-list');
+      listEl.innerHTML = '';
+
+      document.getElementById('policy-count-badge').textContent = `${state.activePolicies.length} 枚有効`;
+
+      if (state.sandboxMode) {
+        // サンドボックスモードでは全政策カードをトグル切替可能
+        Object.values(POLICIES).forEach(p => {
+          const isActive = state.activePolicies.includes(p.id);
+          const card = document.createElement('button');
+          card.className = `w-full p-2.5 rounded-lg border text-left transition ${
+            isActive
+              ? 'bg-purple-950/40 border-purple-400 text-white'
+              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-600'
+          }`;
+          card.onclick = () => {
+            if (isActive) {
+              state.activePolicies = state.activePolicies.filter(id => id !== p.id);
+            } else {
+              state.activePolicies.push(p.id);
+            }
+            sfx.playPin();
+            renderAll();
+          };
+          card.innerHTML = `
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-xs font-extrabold ${isActive ? 'text-purple-300' : 'text-slate-300'}">${p.name}</span>
+              <span class="text-[10px] font-mono-num px-1.5 py-0.5 rounded ${isActive ? 'bg-purple-500/30 text-purple-200' : 'bg-slate-800 text-slate-500'}">
+                ${isActive ? 'ON' : 'OFF'}
+              </span>
+            </div>
+            <p class="text-[11px] leading-snug text-slate-300">${p.desc}</p>
+          `;
+          listEl.appendChild(card);
+        });
+      } else {
+        if (state.activePolicies.length === 0) {
+          listEl.innerHTML = `
+            <div class="p-4 rounded-lg border border-dashed border-slate-700 text-center text-xs text-slate-500">
+              まだ政策カードがありません。<br/>時代目標を達成すると、ルールを書き換える強力な政策を採択できます！
+            </div>
+          `;
+        } else {
+          state.activePolicies.forEach(pId => {
+            const p = POLICIES[pId];
+            const card = document.createElement('div');
+            card.className = 'p-2.5 rounded-lg bg-purple-950/35 border border-purple-400/60';
+            card.innerHTML = `
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-xs font-extrabold text-purple-300">${p.name}</span>
+                <span class="text-[9px] font-mono-num text-purple-400">${p.rarity}</span>
+              </div>
+              <p class="text-[11px] text-slate-200 leading-snug">${p.desc}</p>
+            `;
+            listEl.appendChild(card);
+          });
+        }
+      }
+
+      // 出力内訳サマリー更新
+      document.getElementById('stat-districts').textContent = `${currentEval.byHex.size} 区域`;
+      document.getElementById('stat-max-hex').textContent = `+${currentEval.maxSingleHex}`;
+      document.getElementById('stat-triangles').textContent = `${currentEval.triangleCount} 箇所`;
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status-ticker').textContent = msg;
+    }
+
+    // ==========================================
+    // 9. 時代進行＆政策カードドラフトモーダル
+    // ==========================================
+    function advanceEra() {
+      sfx.playFanfare();
+      const currentEval = evaluateBoardYields(state.hexes, state.activePolicies);
+
+      if (state.eraIndex >= ERAS.length - 1) {
+        document.getElementById('victory-final-score').textContent = currentEval.empireTotal;
+        document.getElementById('modal-victory').classList.remove('hidden');
+        return;
+      }
+
+      // ドラフト候補3枚を抽出
+      const unowned = Object.values(POLICIES).filter(p => !state.activePolicies.includes(p.id));
+      const pool = unowned.length >= 3 ? unowned : Object.values(POLICIES);
+      const choices = [...pool].sort(() => Math.random() - 0.5).slice(0, 3);
+
+      const container = document.getElementById('draft-cards-container');
+      container.innerHTML = '';
+
+      choices.forEach(p => {
+        const card = document.createElement('button');
+        card.className = 'p-4 rounded-xl bg-slate-900 hover:bg-purple-950/50 border-2 border-slate-700 hover:border-purple-400 text-left flex flex-col justify-between transition-all group';
+        card.innerHTML = `
+          <div>
+            <div class="flex justify-between items-center mb-1.5">
+              <span class="text-[10px] font-mono-num font-bold text-purple-400">${p.tag}</span>
+              <span class="text-[10px] font-mono-num px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">${p.rarity}</span>
+            </div>
+            <div class="text-base font-extrabold text-white group-hover:text-amber-300 transition mb-2">${p.name}</div>
+            <p class="text-xs text-slate-300 leading-relaxed">${p.desc}</p>
+          </div>
+          <div class="mt-4 pt-2 border-t border-slate-800 text-xs font-bold text-emerald-400">
+            ▶ この制度を採択して次の時代へ
+          </div>
+        `;
+        card.onclick = () => {
+          if (!state.activePolicies.includes(p.id)) {
+            state.activePolicies.push(p.id);
+          }
+          document.getElementById('modal-draft').classList.add('hidden');
+          state.eraIndex++;
+          generateMap();
+          setStatus(`🏛️ ERA ${ERAS[state.eraIndex].era}（${ERAS[state.eraIndex].name}）開始！新たな政策「${p.name}」が有効化されました。`);
+        };
+        container.appendChild(card);
+      });
+
+      document.getElementById('modal-draft').classList.remove('hidden');
+    }
+
+    // ==========================================
+    // 10. ボタンイベント登録
+    // ==========================================
+    document.getElementById('btn-pin-mode').onclick = () => {
+      state.pinMode = !state.pinMode;
+      const badge = document.getElementById('pin-mode-status');
+      badge.textContent = state.pinMode ? 'ON' : 'OFF';
+      badge.className = state.pinMode
+        ? 'text-[11px] font-mono-num font-bold px-2 py-0.5 rounded bg-cyan-500 text-slate-950'
+        : 'text-[11px] font-mono-num font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+      sfx.playPin();
+      setStatus(state.pinMode
+        ? '📍 都市計画ピンモードON：建設枠を消費せずに仮配置ピンを打てます。'
+        : '🔨 通常建設モードに戻りました。');
+    };
+
+    document.getElementById('btn-sandbox').onclick = (e) => {
+      state.sandboxMode = !state.sandboxMode;
+      state.maxBuilds = state.sandboxMode ? 19 : ERAS[state.eraIndex].maxBuilds;
+      e.target.textContent = state.sandboxMode ? '🧪 サンドボックス: ON' : '🧪 サンドボックス: OFF';
+      e.target.className = state.sandboxMode
+        ? 'px-2.5 py-1.5 rounded-lg text-xs font-bold border border-purple-400 bg-purple-600 text-white shadow transition'
+        : 'px-2.5 py-1.5 rounded-lg text-xs font-bold border border-purple-500/40 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 transition';
+      sfx.playPin();
+      setStatus(state.sandboxMode
+        ? '🧪 サンドボックスON：建設数無制限＆右パネルから全政策カードを自由にON/OFFできます！'
+        : '🏛️ 通常キャンペーンモードに戻りました。');
+      renderAll();
+    };
+
+    document.getElementById('btn-undo').onclick = () => undoLastAction();
+    document.getElementById('btn-clear-pins').onclick = () => clearAllPins();
+    document.getElementById('btn-reroll').onclick = () => {
+      sfx.playPin();
+      generateMap();
+      setStatus('🎲 新しい地形を生成しました。');
+    };
+
+    document.getElementById('btn-sound').onclick = (e) => {
+      sfx.muted = !sfx.muted;
+      e.target.textContent = sfx.muted ? '🔇' : '🔊';
+    };
+
+    document.getElementById('btn-advance-era').onclick = () => advanceEra();
+
+    document.getElementById('btn-victory-sandbox').onclick = () => {
+      document.getElementById('modal-victory').classList.add('hidden');
+      if (!state.sandboxMode) {
+        document.getElementById('btn-sandbox').click();
+      }
+    };
+
+    document.getElementById('btn-victory-restart').onclick = () => {
+      document.getElementById('modal-victory').classList.add('hidden');
+      state.eraIndex = 0;
+      state.activePolicies = [];
+      state.sandboxMode = false;
+      generateMap();
+    };
+
+    // 初期化実行
+    window.onload = () => {
+      generateMap();
+    };
+  </script>
+</body>
+</html>
